@@ -1,0 +1,55 @@
+services:
+  pi-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: local/pi-coding-agent:latest
+    container_name: pi_coding_agent
+    
+    tty: true
+    stdin_open: true
+
+    environment:
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GIT_AUTHOR_NAME=${GIT_NAME}
+      - GIT_AUTHOR_EMAIL=${GIT_EMAIL}
+      - GIT_COMMITTER_NAME=${GIT_NAME}
+      - GIT_COMMITTER_EMAIL=${GIT_EMAIL}
+
+      # GPG config
+      - GIT_CONFIG_COUNT=2
+      - GIT_CONFIG_KEY_0=user.signingkey
+      - GIT_CONFIG_VALUE_0=${GIT_GPG_KEY}
+      - GIT_CONFIG_KEY_1=commit.gpgsign
+      - GIT_CONFIG_VALUE_1=${GIT_GPG_SIGN:-false}
+
+    volumes:
+      - workspace:/workspace
+      - pi_data:/home/node/.pi
+      - ${SKILLS_DIR:-~/.agents/skills}:/home/node/.agents/skills:ro
+      
+    user: "${UID:-1000}:${GID:-1000}"
+    
+    networks:
+      - pi_network
+
+    restart: "no"
+
+volumes:
+  pi_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/.pi-data
+
+  workspace:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/workspace
+
+networks:
+  pi_network:
+    driver: bridge
