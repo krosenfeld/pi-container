@@ -48,6 +48,11 @@ FROM base AS release
 # We verify the registry connection implicitly during install
 RUN npm install -g @mariozechner/pi-coding-agent
 
+# Transparently route GitHub SSH remotes over HTTPS so that `gh`'s credential
+# helper can authenticate pushes without requiring an ssh client or SSH keys.
+RUN git config --system --add url."https://github.com/".insteadOf "git@github.com:" \
+ && git config --system --add url."https://github.com/".insteadOf "ssh://git@github.com/"
+
 # Create a non-root user setup
 # We use the existing 'node' user (UID 1000) provided by the base image
 # Create the .pi directory structure to ensure permissions are correct when mounted
