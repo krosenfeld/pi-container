@@ -4,12 +4,12 @@
 .PHONY: build run clean shell
 
 # Detect User ID and Group ID to prevent permission issues on Linux
-UID := $(shell id -u)
-GID := $(shell id -g)
+HOST_UID := $(shell id -u)
+HOST_GID := $(shell id -g)
 
 # Create local data directory for persistence if using bind mount strategy
 setup:
-	mkdir -p .pi-data
+	mkdir -p .pi-data workspace
 
 # Build the docker image locally from source/npm
 build:
@@ -22,15 +22,15 @@ update:
 # Run the agent in interactive mode
 # Passes the current user's UID/GID to the container
 run: setup
-	UID=$(UID) GID=$(GID) docker compose run --rm pi-agent
+	UID=$(HOST_UID) GID=$(HOST_GID) docker compose run --rm pi-agent
 
 # Run the agent with arguments (e.g., make args="--help" run-args)
 run-args: setup
-	UID=$(UID) GID=$(GID) docker compose run --rm pi-agent $(args)
+	UID=$(HOST_UID) GID=$(HOST_GID) docker compose run --rm pi-agent $(args)
 
 # Access the container shell for debugging
 shell: setup
-	UID=$(UID) GID=$(GID) docker compose run --entrypoint /bin/bash --rm pi-agent
+	UID=$(HOST_UID) GID=$(HOST_GID) docker compose run --entrypoint /bin/bash --rm pi-agent
 
 # Clean up stopped containers and networks
 clean:
