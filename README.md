@@ -1,4 +1,4 @@
-# pi-container
+# pi-container 🥧
 
 A sandboxed Docker environment for running the [pi coding agent](https://github.com/badlogic/pi-mono). The container isolates the agent from your host system while providing access to your project workspace, persistent agent data, and local skills.
 
