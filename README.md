@@ -72,6 +72,20 @@ make args="'Create a snake game in python'" run-args
 
 The skills source path can be overridden by setting `SKILLS_DIR` in `.env`.
 
+## Extending pi from inside the container
+
+You can use pi to extend itself from within the container, and changes will persist thanks to the read-write volume mounts.
+
+| What you do | Where it lives | Persists? |
+|---|---|---|
+| `pi install npm:...` / `pi install git:...` | `~/.pi/` → `.pi-data/` on host | ✅ Yes |
+| `pi config` (enable/disable resources) | `~/.pi/agent/settings.json` | ✅ Yes |
+| Write extensions/skills/themes to `/workspace` | `./workspace/` on host | ✅ Yes |
+| Modify pi's own source in `/usr/local/lib/node_modules/...` | Container overlay filesystem | ❌ No — lost on restart |
+| Write to `~/.agents/skills/` | Read-only mount | ❌ Not allowed |
+
+The recommended workflow is to install packages (`pi install`) or place local extensions/skills in `/workspace` and reference them with a project-level `.pi/settings.json`. Both locations are backed by host-side read-write mounts and survive container restarts.
+
 ## Credits
 
 Based on [gni/pi-coding-agent-container](https://github.com/gni/pi-coding-agent-container).
