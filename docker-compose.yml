@@ -36,7 +36,7 @@ services:
       - pi_data:/home/node/.pi
       - ${SKILLS_DIR:-~/.agents/skills}:/home/node/.agents/skills:ro
       
-    user: "${UID:-1000}:${GID:-1000}"
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     
     networks:
       - pi_network
