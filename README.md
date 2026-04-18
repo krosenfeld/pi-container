@@ -38,13 +38,15 @@ make args="'Create a snake game in python'" run-args
 
 | Host path | Container path | Mode |
 |---|---|---|
-| `./workspace` | `/workspace` | read-write |
-| `./.pi-data` | `/home/node/.pi` | read-write |
+| repo root (`make run`) / current dir (`pie`) | `/workspace` | read-write |
+| `./.pi-data` (in the pi-container repo) | `/home/node/.pi` | read-write |
 | `~/.agents/skills` (or `$SKILLS_DIR`) | `/home/node/.agents/skills` | read-only |
 
 ## Running pi from any directory
 
 After `make build`, the `pie` wrapper script mounts your **current directory** as `/workspace`, so you can use the agent on any project without modifying it.
+
+Install it as a **symlink** (not a copy) — the script locates `.env` and `.pi-data` relative to the real script location, and resolves symlinks to find them.
 
 ```bash
 # From inside the pi-container repo:

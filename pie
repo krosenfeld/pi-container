@@ -10,7 +10,14 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve symlinks so SCRIPT_DIR points at the real repo, not e.g. ~/.local/bin
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 
 # Load environment variables from the .env file that lives next to this script
 if [ -f "$SCRIPT_DIR/.env" ]; then
@@ -30,6 +37,7 @@ docker run --rm -it \
   -e GIT_AUTHOR_EMAIL="${GIT_EMAIL:-}" \
   -e GIT_COMMITTER_NAME="${GIT_NAME:-}" \
   -e GIT_COMMITTER_EMAIL="${GIT_EMAIL:-}" \
+  -e HOME=/home/node \
   -e GIT_CONFIG_COUNT=3 \
   -e GIT_CONFIG_KEY_0="credential.https://github.com.helper" \
   -e "GIT_CONFIG_VALUE_0=!/usr/bin/gh auth git-credential" \
