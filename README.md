@@ -48,7 +48,9 @@ After `make build`, the `pie` wrapper script mounts your **current directory** a
 
 ```bash
 # From inside the pi-container repo:
-ln -s "$(pwd)/pie" /usr/local/bin/pie
+sudo ln -s "$(pwd)/pie" /usr/local/bin/pie   # /usr/local/bin typically requires sudo
+# or, without sudo, drop it somewhere already on your PATH, e.g.:
+#   mkdir -p ~/.local/bin && ln -s "$(pwd)/pie" ~/.local/bin/pie
 
 cd ~/my-other-project
 pie                           # interactive TUI
