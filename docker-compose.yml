@@ -18,12 +18,15 @@ services:
       - GIT_COMMITTER_NAME=${GIT_NAME}
       - GIT_COMMITTER_EMAIL=${GIT_EMAIL}
 
+      # Git credential helper — use gh CLI which reads GITHUB_TOKEN
+      - GIT_CONFIG_COUNT=3
+      - GIT_CONFIG_KEY_0=credential.https://github.com.helper
+      - GIT_CONFIG_VALUE_0=!/usr/bin/gh auth git-credential
       # GPG config
-      - GIT_CONFIG_COUNT=2
-      - GIT_CONFIG_KEY_0=user.signingkey
-      - GIT_CONFIG_VALUE_0=${GIT_GPG_KEY}
-      - GIT_CONFIG_KEY_1=commit.gpgsign
-      - GIT_CONFIG_VALUE_1=${GIT_GPG_SIGN:-false}
+      - GIT_CONFIG_KEY_1=user.signingkey
+      - GIT_CONFIG_VALUE_1=${GIT_GPG_KEY}
+      - GIT_CONFIG_KEY_2=commit.gpgsign
+      - GIT_CONFIG_VALUE_2=${GIT_GPG_SIGN:-false}
 
     volumes:
       - .:/workspace
