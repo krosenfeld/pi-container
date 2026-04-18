@@ -86,6 +86,40 @@ You can use pi to extend itself from within the container, and changes will pers
 
 The recommended workflow is to install packages (`pi install`) or place local extensions/skills in `/workspace` and reference them with a project-level `.pi/settings.json`. Both locations are backed by host-side read-write mounts and survive container restarts.
 
+## Running pi from any directory
+
+After `make build`, the image `local/pi-coding-agent:latest` is available locally. A wrapper script `pie` is included that mounts **whichever directory you are currently in** as `/workspace`, so you can use the agent on any project without touching that project's files.
+
+### 1. Symlink the script onto your PATH
+
+```bash
+# From inside the pi-container repo:
+ln -s "$(pwd)/pie" /usr/local/bin/pie
+```
+
+> The script reads your `.env` from the pi-container repo automatically, so API keys and git identity are always picked up — no extra configuration needed per project.
+
+### 2. Use it anywhere
+
+```bash
+cd ~/my-other-project
+pie                              # interactive TUI
+pie "Explain this codebase"      # one-off prompt
+pie --version                    # any pie flag
+```
+
+### How it works
+
+`pie` calls `docker run` directly (bypassing Compose) and substitutes `$(pwd)` for the workspace mount:
+
+| Mount | Source |
+|---|---|
+| `/workspace` | your **current directory** (`$(pwd)`) |
+| `/home/node/.pi` | `<pi-container>/.pi-data` (shared, persistent) |
+| `/home/node/.agents/skills` | `~/.agents/skills` (or `$SKILLS_DIR`) |
+
+Because `.pi-data` is always sourced from the pi-container directory, your installed packages, settings, and login state are shared across all projects.
+
 ## Credits
 
 Based on [gni/pi-coding-agent-container](https://github.com/gni/pi-coding-agent-container).
