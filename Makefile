@@ -9,7 +9,7 @@ HOST_GID := $(shell id -g)
 
 # Create local data directory for persistence if using bind mount strategy
 setup:
-	mkdir -p .pi-data workspace
+	mkdir -p .pi-data
 
 # Build the docker image locally from source/npm
 build:

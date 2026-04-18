@@ -26,7 +26,7 @@ services:
       - GIT_CONFIG_VALUE_1=${GIT_GPG_SIGN:-false}
 
     volumes:
-      - workspace:/workspace
+      - .:/workspace
       - pi_data:/home/node/.pi
       - ${SKILLS_DIR:-~/.agents/skills}:/home/node/.agents/skills:ro
       
@@ -44,13 +44,6 @@ volumes:
       type: none
       o: bind
       device: ${PWD}/.pi-data
-
-  workspace:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${PWD}/workspace
 
 networks:
   pi_network:
