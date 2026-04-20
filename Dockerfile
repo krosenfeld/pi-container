@@ -1,5 +1,12 @@
 # syntax=docker/dockerfile:1
 
+# -----------------------------------------------------------------------------
+# Pinned versions for reproducible builds.
+# Bump these deliberately; avoid `latest` so image contents don't drift.
+# -----------------------------------------------------------------------------
+ARG UV_VERSION=0.11.7
+ARG PI_AGENT_VERSION=0.67.68
+
 FROM node:22-bookworm-slim AS base
 
 # Set environment variables for production and non-interactive installation
@@ -37,16 +44,18 @@ RUN mkdir -p -m 755 /etc/apt/keyrings \
     && rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------------------------
-# Install uv (fast Python package manager)
+# Install uv (fast Python package manager) at a pinned version
 # https://docs.astral.sh/uv/
 # -----------------------------------------------------------------------------
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
+ARG UV_VERSION
+COPY --from=ghcr.io/astral-sh/uv:${UV_VERSION} /uv /uvx /usr/local/bin/
 
 FROM base AS release
 
-# Install the pi-coding-agent globally
+# Install the pi-coding-agent globally at a pinned version
 # We verify the registry connection implicitly during install
-RUN npm install -g @mariozechner/pi-coding-agent
+ARG PI_AGENT_VERSION
+RUN npm install -g @mariozechner/pi-coding-agent@${PI_AGENT_VERSION}
 
 # Transparently route GitHub SSH remotes over HTTPS so that `gh`'s credential
 # helper can authenticate pushes without requiring an ssh client or SSH keys.

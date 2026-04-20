@@ -7,7 +7,7 @@ A sandboxed Docker environment for running the [pi coding agent](https://github.
 - **pi coding agent**, **Python 3 + uv**, **Git + GitHub CLI**, and common build tools
 - Runs as a **non-root user** with **UID/GID mapping** so files stay owned by you
 - Only **explicit mounts** are exposed; skills are mounted **read-only**
-- **Built from source** — no pre-built images
+- **Builds locally** from a `Dockerfile` that installs **pinned** versions of `uv` and the pi agent from their upstream releases, so image contents don't drift between builds. Bump the `UV_VERSION` / `PI_AGENT_VERSION` args in the `Dockerfile` (or pass `--build-arg`) to upgrade.
 
 ## Quick start
 
