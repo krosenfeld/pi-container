@@ -1,17 +1,23 @@
 #!/usr/bin/env bash
 # Smoke test for the pi-coding-agent container image.
 #
-# Verifies basic runtime expectations of the built image:
+# Exercises the supported launch paths — `docker compose run` and the `pie`
+# wrapper — rather than reconstructing a parallel `docker run` invocation, so
+# regressions in the real launch paths (lost `:ro` on the skills mount, a
+# missing `HOME=/home/node`, broken `HOST_UID/HOST_GID` wiring, etc.) surface
+# here instead of in production.
+#
+# Verifies:
 #   1. The image exists (or can be built) and starts.
 #   2. Core toolchain is installed and runnable: pi, uv, gh, git, node.
-#   3. /workspace is writable by the container user.
-#   4. The skills mount is read-only (writes must fail).
-#   5. The container runs as the requested host UID:GID (not root, not the
-#      baked-in 1000:1000 when a different UID/GID is supplied).
-#   6. /home/node/.pi is writable (bind-mounted persistent data dir).
+#   3. /workspace is writable by the mapped host user.
+#   4. The skills mount is present and read-only (writes fail).
+#   5. /home/node/.pi is writable (persistent data dir).
+#   6. The container runs as the requested HOST_UID:HOST_GID.
+#   7. HOME=/home/node inside the container.
+#   8. `pie --version` launches pi end-to-end through the wrapper.
 #
-# The script is intentionally dependency-light: it only requires bash, docker,
-# and coreutils. It is safe to run locally or from CI.
+# Dependency-light: bash, docker, coreutils. Safe for local and CI use.
 #
 # Usage:
 #   scripts/smoke-test.sh            # uses local/pi-coding-agent:latest
@@ -23,31 +29,41 @@ set -euo pipefail
 IMAGE="${IMAGE:-local/pi-coding-agent:latest}"
 SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -P "$SCRIPT_DIR/.." && pwd)"
+PIE="$REPO_ROOT/pie"
 
-# Use a UID/GID that is *not* the node user's default 1000:1000 when possible,
-# so we actually exercise the host-UID mapping. Fall back to an arbitrary
-# non-root, non-1000 pair when the caller is root (e.g. some CI runners).
-HOST_UID="$(id -u)"
-HOST_GID="$(id -g)"
-if [ "$HOST_UID" = "0" ]; then
-  HOST_UID=4242
-  HOST_GID=4242
+# docker-compose.yml reads HOST_UID/HOST_GID from the environment. `make
+# smoke-test` exports them, but direct invocations of this script must not
+# rely on that — export the caller's real UID/GID so the mapping check
+# exercises the same wiring that production uses.
+export HOST_UID="${HOST_UID:-$(id -u)}"
+export HOST_GID="${HOST_GID:-$(id -g)}"
+
+# Ensure bind-mount sources exist before compose runs, so Docker doesn't
+# auto-create them as root on platforms where that applies.
+mkdir -p "$REPO_ROOT/.pi-data"
+
+TMPDIRS=()
+cleanup() {
+  if [ "${#TMPDIRS[@]}" -gt 0 ]; then
+    rm -rf "${TMPDIRS[@]}"
+  fi
+}
+trap cleanup EXIT
+
+# If the caller hasn't configured SKILLS_DIR and the default doesn't exist,
+# point it at an ephemeral dir so compose's `${SKILLS_DIR:-~/.agents/skills}`
+# mount doesn't silently autovivify a root-owned directory on the host.
+if [ -z "${SKILLS_DIR:-}" ] && [ ! -d "$HOME/.agents/skills" ]; then
+  SKILLS_DIR="$(mktemp -d)"
+  chmod 0755 "$SKILLS_DIR"
+  TMPDIRS+=("$SKILLS_DIR")
+  export SKILLS_DIR
 fi
 
 pass=0
 fail=0
 results=()
-TMPDIRS=()
 
-cleanup() {
-  local d
-  for d in "${TMPDIRS[@]:-}"; do
-    [ -n "$d" ] && rm -rf "$d"
-  done
-}
-trap cleanup EXIT
-
-# Gate color on stdout being a TTY so CI logs stay clean.
 if [ -t 1 ]; then
   C_INFO=$'\033[1;34m'; C_OK=$'\033[1;32m'; C_BAD=$'\033[1;31m'; C_RST=$'\033[0m'
 else
@@ -58,17 +74,6 @@ log()  { printf '%s[smoke]%s %s\n' "$C_INFO" "$C_RST" "$*"; }
 ok()   { printf '  %sPASS%s %s\n' "$C_OK"  "$C_RST" "$*"; pass=$((pass+1)); results+=("PASS: $*"); }
 bad()  { printf '  %sFAIL%s %s\n' "$C_BAD" "$C_RST" "$*"; fail=$((fail+1)); results+=("FAIL: $*"); }
 
-# Create a tempdir that the container's mapped UID can actually write to.
-# Without this, a root-owned mktemp dir would cause writable-mount tests to
-# fail for ownership reasons rather than image reasons.
-make_writable_tmp() {
-  local d
-  d="$(mktemp -d)"
-  chmod 0777 "$d"
-  TMPDIRS+=("$d")
-  printf '%s' "$d"
-}
-
 ensure_image() {
   if [ "${BUILD:-0}" = "1" ] || ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
     log "Building image $IMAGE (docker compose build)..."
@@ -78,96 +83,112 @@ ensure_image() {
   fi
 }
 
-# Run a command inside the image, overriding the entrypoint so we can invoke
-# arbitrary binaries (the default entrypoint is `pi`). Always runs as the
-# mapped host UID/GID so every check exercises the same user-mapping path.
-run_in_image() {
-  # Args: <extra docker args...> -- <cmd> [args...]
-  local docker_args=()
-  while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do
-    docker_args+=("$1"); shift
-  done
-  shift  # drop the --
-  docker run --rm --entrypoint "" \
-    --user "$HOST_UID:$HOST_GID" \
-    "${docker_args[@]}" \
-    "$IMAGE" "$@"
+# Run a command through `docker compose run --rm`, overriding the entrypoint
+# so arbitrary binaries can be exercised. Going through compose is deliberate:
+# checks fail if docker-compose.yml regresses (user mapping, mount specs,
+# HOME, read-only flags, etc.) instead of silently staying green.
+compose_run() {
+  local entrypoint="$1"; shift
+  ( cd "$REPO_ROOT" && docker compose run --rm --no-TTY --entrypoint "$entrypoint" pi-agent "$@" )
 }
 
-check_tool() {
+check_tool_compose() {
   local tool="$1"; shift
   local out
-  if out=$(run_in_image -- "$tool" "$@" 2>&1); then
-    ok "$tool available ($(printf '%s' "$out" | head -n1))"
+  if out=$(compose_run "$tool" "$@" 2>&1); then
+    ok "[compose] $tool available ($(printf '%s' "$out" | head -n1))"
   else
-    bad "$tool not runnable: $out"
+    bad "[compose] $tool not runnable: $(printf '%s' "$out" | head -n1)"
   fi
 }
 
-check_workspace_writable() {
-  local tmp; tmp="$(make_writable_tmp)"
-  if run_in_image -v "$tmp:/workspace" \
-       -- sh -c 'echo hello > /workspace/smoke.txt && cat /workspace/smoke.txt' \
-       | grep -q '^hello$'; then
-    ok "/workspace is writable as $HOST_UID:$HOST_GID"
+check_workspace_writable_compose() {
+  if compose_run sh -c 'f=/workspace/.smoke-test-$$; touch "$f" && rm "$f"' >/dev/null 2>&1; then
+    ok "[compose] /workspace writable as $HOST_UID:$HOST_GID"
   else
-    bad "/workspace is NOT writable as $HOST_UID:$HOST_GID"
+    bad "[compose] /workspace NOT writable as $HOST_UID:$HOST_GID"
   fi
 }
 
-check_skills_readonly() {
-  local tmp; tmp="$(make_writable_tmp)"
-  # Assert the mount is ro at the filesystem level (unambiguous — doesn't
-  # depend on tempdir ownership), and that writes fail.
-  if run_in_image -v "$tmp:/home/node/.agents/skills:ro" \
-       -- sh -c '! test -w /home/node/.agents/skills \
-                 && ! (echo x > /home/node/.agents/skills/should-fail) 2>/dev/null' ; then
-    ok "skills mount is read-only"
+check_skills_readonly_compose() {
+  if ! compose_run sh -c 'test -d /home/node/.agents/skills' >/dev/null 2>&1; then
+    bad "[compose] /home/node/.agents/skills is not mounted"
+    return
+  fi
+  # A 0 exit from the write is the failure case (mount isn't read-only).
+  if compose_run sh -c 'touch /home/node/.agents/skills/.smoke-test' >/dev/null 2>&1; then
+    bad "[compose] skills mount is writable (expected read-only)"
+    compose_run sh -c 'rm -f /home/node/.agents/skills/.smoke-test' >/dev/null 2>&1 || true
   else
-    bad "skills mount is writable (expected read-only)"
+    ok "[compose] skills mount is read-only"
   fi
 }
 
-check_user_mapping() {
-  local out actual_uid actual_gid
-  out=$(run_in_image -- sh -c 'printf "%s:%s" "$(id -u)" "$(id -g)"')
-  actual_uid="${out%%:*}"
-  actual_gid="${out##*:}"
-  if [ "$actual_uid" = "$HOST_UID" ] && [ "$actual_gid" = "$HOST_GID" ]; then
-    ok "container runs as $actual_uid:$actual_gid (matches requested $HOST_UID:$HOST_GID)"
+check_pi_data_writable_compose() {
+  if compose_run sh -c 'f=/home/node/.pi/.smoke-test-$$; touch "$f" && rm "$f"' >/dev/null 2>&1; then
+    ok "[compose] /home/node/.pi writable"
   else
-    bad "container uid:gid = $actual_uid:$actual_gid, expected $HOST_UID:$HOST_GID"
+    bad "[compose] /home/node/.pi NOT writable"
   fi
 }
 
-check_pi_data_writable() {
-  local tmp; tmp="$(make_writable_tmp)"
-  if run_in_image -v "$tmp:/home/node/.pi" \
-       -- sh -c 'echo ok > /home/node/.pi/smoke && cat /home/node/.pi/smoke' \
-       | grep -q '^ok$'; then
-    ok "/home/node/.pi is writable as $HOST_UID:$HOST_GID"
+check_user_mapping_compose() {
+  local uid gid
+  uid=$(compose_run id -u 2>/dev/null | tr -d '[:space:]') || true
+  gid=$(compose_run id -g 2>/dev/null | tr -d '[:space:]') || true
+  if [ "$uid" = "$HOST_UID" ] && [ "$gid" = "$HOST_GID" ]; then
+    ok "[compose] container runs as $uid:$gid (matches $HOST_UID:$HOST_GID)"
   else
-    bad "/home/node/.pi is NOT writable as $HOST_UID:$HOST_GID"
+    bad "[compose] uid:gid = $uid:$gid, expected $HOST_UID:$HOST_GID"
+  fi
+}
+
+check_home_compose() {
+  local home
+  home=$(compose_run sh -c 'printf %s "$HOME"' 2>/dev/null | tr -d '[:space:]') || true
+  if [ "$home" = "/home/node" ]; then
+    ok "[compose] HOME=/home/node"
+  else
+    bad "[compose] HOME=$home, expected /home/node"
+  fi
+}
+
+check_pie_version() {
+  # pie's entrypoint is `pi`, so we can't override it without rewriting the
+  # wrapper. A successful `pie --version` still verifies end-to-end that
+  # pie's actual `docker run` invocation is syntactically valid, the mapped
+  # UID can reach HOME/.pi, and pi can start — which is exactly the parity
+  # guarantee this check exists to protect.
+  if (cd "$REPO_ROOT" && "$PIE" --version </dev/null >/dev/null 2>&1); then
+    ok "[pie] --version works"
+  else
+    local out
+    out=$(cd "$REPO_ROOT" && "$PIE" --version </dev/null 2>&1) || true
+    bad "[pie] --version failed: $(printf '%s' "$out" | head -n1)"
   fi
 }
 
 main() {
   ensure_image
 
-  log "Checking toolchain availability..."
-  check_tool pi --version
-  check_tool uv --version
-  check_tool gh --version
-  check_tool git --version
-  check_tool node --version
+  log "Checking toolchain availability (docker compose run)..."
+  check_tool_compose pi --version
+  check_tool_compose uv --version
+  check_tool_compose gh --version
+  check_tool_compose git --version
+  check_tool_compose node --version
 
-  log "Checking mount semantics..."
-  check_workspace_writable
-  check_skills_readonly
-  check_pi_data_writable
+  log "Checking mount semantics (docker compose run)..."
+  check_workspace_writable_compose
+  check_skills_readonly_compose
+  check_pi_data_writable_compose
 
-  log "Checking user mapping..."
-  check_user_mapping
+  log "Checking environment (docker compose run)..."
+  check_user_mapping_compose
+  check_home_compose
+
+  log "Checking pie launcher (end-to-end)..."
+  check_pie_version
 
   echo
   log "Summary: $pass passed, $fail failed"

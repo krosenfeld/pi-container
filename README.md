@@ -80,7 +80,13 @@ It verifies that:
 - `/workspace` is writable by the mapped host user
 - `/home/node/.agents/skills` is mounted read-only (writes fail)
 - `/home/node/.pi` is writable
-- The container honors the requested `--user UID:GID` (not baked-in `1000:1000`)
+- The container runs as the requested `HOST_UID:HOST_GID`
+- `HOME=/home/node` inside the container
+- `pie --version` launches pi end-to-end through the wrapper
+
+Checks run through `docker compose run` and the `pie` wrapper — the same
+launch paths users actually use — so regressions in the compose config or the
+wrapper's `docker run` flags are caught instead of silently passing.
 
 The script is plain bash + docker, so it works the same locally and in CI.
 
