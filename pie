@@ -29,6 +29,11 @@ else
   echo "Warning: no .env file found in $SCRIPT_DIR — API keys / git identity may be missing." >&2
 fi
 
+# Ensure the persistent pi data directory exists before docker bind-mounts it.
+# Otherwise Docker will auto-create it as root on some platforms, leading to
+# permission issues when the container runs as the host user.
+mkdir -p "$SCRIPT_DIR/.pi-data"
+
 # Only allocate a TTY / attach stdin when both stdin and stdout are attached to
 # a terminal. This keeps the interactive TUI working while still allowing
 # scripted / CI use like `pie --version` or piping input.
