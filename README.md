@@ -26,6 +26,8 @@ make run
 | `make run` | Launch pi in interactive TUI mode |
 | `make args="..." run-args` | Run pi with arguments (see below) |
 | `make shell` | Open a bash shell in the container |
+| `make check-uid` | Verify the container runs as the host UID/GID |
+| `make smoke-test` | Run the image smoke test (toolchain, mounts, UID/GID) |
 | `make clean` | Stop and remove containers/networks |
 
 ```bash
@@ -61,6 +63,28 @@ pie --version
 ```
 
 `pie` calls `docker run` directly (bypassing Compose), reads `.env` from the pi-container repo automatically, and always sources `.pi-data` from there — so installed packages, settings, and login state are shared across all projects.
+
+## Smoke test
+
+A lightweight smoke test exercises the built image end-to-end without needing
+API keys or network access:
+
+```bash
+make build
+make smoke-test        # or: BUILD=1 ./scripts/smoke-test.sh
+```
+
+It verifies that:
+
+- `pi`, `uv`, `gh`, `git`, and `node` are installed and runnable
+- `/workspace` is writable by the mapped host user
+- `/home/node/.agents/skills` is mounted read-only (writes fail)
+- `/home/node/.pi` is writable
+- The container honors the requested `--user UID:GID` (not baked-in `1000:1000`)
+
+The script is plain bash + docker, so it works the same locally and in CI.
+
+## Non-interactive `pie`
 
 `pie` auto-detects whether it is being run interactively: it passes `-i -t` to `docker run` only when both stdin and stdout are attached to a terminal, passes just `-i` when stdin is a pipe/file (so you can `echo ... | pie ...`), and omits both when run fully non-interactively (e.g. `pie --version` in CI). This keeps the interactive TUI working while making scripted use safe.
 
