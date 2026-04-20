@@ -29,7 +29,18 @@ else
   echo "Warning: no .env file found in $SCRIPT_DIR — API keys / git identity may be missing." >&2
 fi
 
-docker run --rm -it \
+# Only allocate a TTY / attach stdin when both stdin and stdout are attached to
+# a terminal. This keeps the interactive TUI working while still allowing
+# scripted / CI use like `pie --version` or piping input.
+DOCKER_TTY_FLAGS=()
+if [ -t 0 ] && [ -t 1 ]; then
+  DOCKER_TTY_FLAGS+=(-i -t)
+elif [ ! -t 0 ]; then
+  # stdin is a pipe/file — keep it attached so data can flow in, but no TTY.
+  DOCKER_TTY_FLAGS+=(-i)
+fi
+
+docker run --rm ${DOCKER_TTY_FLAGS[@]+"${DOCKER_TTY_FLAGS[@]}"} \
   -e GITHUB_TOKEN \
   -e ANTHROPIC_API_KEY \
   -e OPENAI_API_KEY \

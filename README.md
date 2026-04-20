@@ -62,6 +62,8 @@ pie --version
 
 `pie` calls `docker run` directly (bypassing Compose), reads `.env` from the pi-container repo automatically, and always sources `.pi-data` from there — so installed packages, settings, and login state are shared across all projects.
 
+`pie` auto-detects whether it is being run interactively: it passes `-i -t` to `docker run` only when both stdin and stdout are attached to a terminal, passes just `-i` when stdin is a pipe/file (so you can `echo ... | pie ...`), and omits both when run fully non-interactively (e.g. `pie --version` in CI). This keeps the interactive TUI working while making scripted use safe.
+
 ## Extending pi from inside the container
 
 Because mounts are read-write, pi can extend itself and changes persist:
