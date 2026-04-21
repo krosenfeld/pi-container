@@ -1,7 +1,7 @@
 # Helper Makefile to simplify running the secure agent container
 # Usage: make run
 
-.PHONY: build run clean shell check-uid
+.PHONY: build run clean shell check-uid smoke-test
 
 # Detect User ID and Group ID to prevent permission issues on Linux
 HOST_UID := $(shell id -u)
@@ -48,6 +48,14 @@ check-uid: setup
 		exit 1; \
 	fi; \
 	echo "OK: container runs as $$actual_uid:$$actual_gid"
+
+# Run the smoke test against the built image.
+# Verifies toolchain availability (pi, uv, gh, git, node), that /workspace is
+# writable, that the skills mount is read-only, and that the container honors
+# the host UID/GID mapping. Pass BUILD=1 to force a rebuild first, or IMAGE=
+# to override the default (local/pi-coding-agent:latest).
+smoke-test:
+	./scripts/smoke-test.sh
 
 # Clean up stopped containers and networks
 clean:
